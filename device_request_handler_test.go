@@ -1,0 +1,138 @@
+// Copyright © 2023 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
+package fosite_test
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"testing"
+
+	"github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	. "github.com/ory/fosite"
+	. "github.com/ory/fosite/internal"
+)
+
+func TestNewDeviceRequest(t *testing.T) {
+	var store *MockStorage
+	for k, c := range []struct {
+		desc          string
+		conf          *Fosite
+		r             *http.Request
+		query         url.Values
+		expectedError error
+		mock          func()
+		expect        *DeviceUserRequest
+	}{
+		/* empty request */
+		{
+			desc:          "empty request fails",
+			conf:          &Fosite{Store: store, Config: &Config{ScopeStrategy: ExactScopeStrategy, AudienceMatchingStrategy: DefaultAudienceMatchingStrategy}},
+			expectedError: ErrInvalidClient,
+			mock: func() {
+				store.EXPECT().GetClient(gomock.Any(), gomock.Any()).Return(nil, errors.New("foo"))
+			},
+		},
+		/* invalid client */
+		{
+			desc: "invalid client fails",
+			conf: &Fosite{Store: store, Config: &Config{ScopeStrategy: ExactScopeStrategy, AudienceMatchingStrategy: DefaultAudienceMatchingStrategy}},
+			r: &http.Request{
+				PostForm: url.Values{
+					"client_id": {"1234"},
+					"scope":     {"foo bar"},
+				},
+			},
+			expectedError: ErrInvalidClient,
+			mock: func() {
+				store.EXPECT().GetClient(gomock.Any(), gomock.Any()).Return(nil, errors.New("foo"))
+			},
+		},
+		/* fails because scope not given */
+		{
+			desc: "should fail because client does not have scope baz",
+			conf: &Fosite{Store: store, Config: &Config{ScopeStrategy: ExactScopeStrategy, AudienceMatchingStrategy: DefaultAudienceMatchingStrategy}},
+			r: &http.Request{
+				PostForm: url.Values{
+					"client_id": {"1234"},
+					"scope":     {"foo bar baz"},
+				},
+			},
+			mock: func() {
+				store.EXPECT().GetClient(gomock.Any(), "1234").Return(&DefaultClient{
+					GrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code"},
+					Scopes:     []string{"foo", "bar"},
+				}, nil)
+			},
+			expectedError: ErrInvalidScope,
+		},
+		/* success case */
+		{
+			desc: "should pass",
+			conf: &Fosite{Store: store, Config: &Config{ScopeStrategy: ExactScopeStrategy, AudienceMatchingStrategy: DefaultAudienceMatchingStrategy}},
+			r: &http.Request{
+				PostForm: url.Values{
+					"client_id": {"1234"},
+					"scope":     {"foo bar"},
+				},
+			},
+			mock: func() {
+				store.EXPECT().GetClient(gomock.Any(), "1234").Return(&DefaultClient{
+					Scopes:     []string{"foo", "bar"},
+					GrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code"},
+				}, nil)
+			},
+			expect: &DeviceUserRequest{
+				Request: Request{
+					Client: &DefaultClient{
+						Scopes: []string{"foo", "bar"},
+					},
+					RequestedScope: []string{"foo", "bar"},
+				},
+			},
+		},
+		/* should fail because doesn't have proper grant */
+		{
+			desc: "should pass",
+			conf: &Fosite{Store: store, Config: &Config{ScopeStrategy: ExactScopeStrategy, AudienceMatchingStrategy: DefaultAudienceMatchingStrategy}},
+			r: &http.Request{
+				PostForm: url.Values{
+					"client_id": {"1234"},
+					"scope":     {"foo bar"},
+				},
+			},
+			mock: func() {
+				store.EXPECT().GetClient(gomock.Any(), "1234").Return(&DefaultClient{
+					Scopes: []string{"foo", "bar"},
+				}, nil)
+			},
+			expectedError: ErrInvalidGrant,
+		},
+	} {
+		t.Run(fmt.Sprintf("case=%d", k), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			store = NewMockStorage(ctrl)
+			defer ctrl.Finish()
+
+			c.mock()
+			if c.r == nil {
+				c.r = &http.Request{Header: http.Header{}}
+			}
+
+			c.conf.Store = store
+			ar, err := c.conf.NewDeviceRequest(context.Background(), c.r)
+			if c.expectedError != nil {
+				assert.EqualError(t, err, c.expectedError.Error())
+			} else {
+				require.NoError(t, err)
+				assert.NotNil(t, ar.GetRequestedAt())
+			}
+		})
+	}
+}

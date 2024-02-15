@@ -30,7 +30,7 @@ func TestAuthorizeCode_PopulateTokenEndpointResponse(t *testing.T) {
 		t.Run("strategy="+k, func(t *testing.T) {
 			store := storage.NewMemoryStore()
 
-			var h AuthorizeExplicitGrantHandler
+			var h GenericCodeTokenEndpointHandler
 			for _, c := range []struct {
 				areq        *fosite.AccessRequest
 				description string
@@ -209,12 +209,15 @@ func TestAuthorizeCode_PopulateTokenEndpointResponse(t *testing.T) {
 						AccessTokenLifespan:      time.Minute,
 						RefreshTokenScopes:       []string{"offline"},
 					}
-					h = AuthorizeExplicitGrantHandler{
-						CoreStorage:           store,
-						AuthorizeCodeStrategy: strategy,
-						AccessTokenStrategy:   strategy,
-						RefreshTokenStrategy:  strategy,
-						Config:                config,
+					h = GenericCodeTokenEndpointHandler{
+						CodeTokenEndpointHandler: &AuthorizeExplicitGrantTokenHandler{
+							AuthorizeCodeStrategy: strategy,
+							AuthorizeCodeStorage:  store,
+						},
+						AccessTokenStrategy:  strategy,
+						RefreshTokenStrategy: strategy,
+						CoreStorage:          store,
+						Config:               config,
 					}
 
 					if c.setup != nil {
@@ -245,16 +248,18 @@ func TestAuthorizeCode_HandleTokenEndpointRequest(t *testing.T) {
 	} {
 		t.Run("strategy="+k, func(t *testing.T) {
 			store := storage.NewMemoryStore()
-
-			h := AuthorizeExplicitGrantHandler{
-				CoreStorage:            store,
-				AuthorizeCodeStrategy:  &hmacshaStrategy,
-				TokenRevocationStorage: store,
-				Config: &fosite.Config{
-					ScopeStrategy:            fosite.HierarchicScopeStrategy,
-					AudienceMatchingStrategy: fosite.DefaultAudienceMatchingStrategy,
-					AuthorizeCodeLifespan:    time.Minute,
+			config := &fosite.Config{
+				ScopeStrategy:            fosite.HierarchicScopeStrategy,
+				AudienceMatchingStrategy: fosite.DefaultAudienceMatchingStrategy,
+				AuthorizeCodeLifespan:    time.Minute,
+			}
+			h := GenericCodeTokenEndpointHandler{
+				CodeTokenEndpointHandler: &AuthorizeExplicitGrantTokenHandler{
+					AuthorizeCodeStorage:  store,
+					AuthorizeCodeStrategy: &hmacshaStrategy,
 				},
+				TokenRevocationStorage: store,
+				Config:                 config,
 			}
 			for i, c := range []struct {
 				areq        *fosite.AccessRequest
@@ -445,6 +450,7 @@ func TestAuthorizeCode_HandleTokenEndpointRequest(t *testing.T) {
 func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 	var mockTransactional *internal.MockTransactional
 	var mockCoreStore *internal.MockCoreStorage
+	var mockAuthorizeStore *internal.MockAuthorizeCodeStorage
 	strategy := hmacshaStrategy
 	request := &fosite.AccessRequest{
 		GrantTypes: fosite.Arguments{"authorization_code"},
@@ -469,6 +475,11 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		CoreStorage
 	}
 
+	type authorizeTransactionalStore struct {
+		storage.Transactional
+		AuthorizeCodeStorage
+	}
+
 	for _, testCase := range []struct {
 		description string
 		setup       func()
@@ -477,7 +488,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "transaction should be committed successfully if no errors occur",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -486,7 +497,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 					EXPECT().
 					BeginTX(propagatedContext).
 					Return(propagatedContext, nil)
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					InvalidateAuthorizeCodeSession(gomock.Any(), gomock.Any()).
 					Return(nil).
@@ -511,7 +522,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "transaction should be rolled back if `InvalidateAuthorizeCodeSession` returns an error",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -520,7 +531,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 					EXPECT().
 					BeginTX(propagatedContext).
 					Return(propagatedContext, nil)
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					InvalidateAuthorizeCodeSession(gomock.Any(), gomock.Any()).
 					Return(errors.New("Whoops, a nasty database error occurred!")).
@@ -536,7 +547,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "transaction should be rolled back if `CreateAccessTokenSession` returns an error",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -545,7 +556,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 					EXPECT().
 					BeginTX(propagatedContext).
 					Return(propagatedContext, nil)
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					InvalidateAuthorizeCodeSession(gomock.Any(), gomock.Any()).
 					Return(nil).
@@ -566,7 +577,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "should result in a server error if transaction cannot be created",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -581,7 +592,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "should result in a server error if transaction cannot be rolled back",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -590,7 +601,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 					EXPECT().
 					BeginTX(propagatedContext).
 					Return(propagatedContext, nil)
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					InvalidateAuthorizeCodeSession(gomock.Any(), gomock.Any()).
 					Return(errors.New("Whoops, a nasty database error occurred!")).
@@ -606,7 +617,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 		{
 			description: "should result in a server error if transaction cannot be committed",
 			setup: func() {
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					GetAuthorizeCodeSession(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(request, nil).
@@ -615,7 +626,7 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 					EXPECT().
 					BeginTX(propagatedContext).
 					Return(propagatedContext, nil)
-				mockCoreStore.
+				mockAuthorizeStore.
 					EXPECT().
 					InvalidateAuthorizeCodeSession(gomock.Any(), gomock.Any()).
 					Return(nil).
@@ -650,21 +661,28 @@ func TestAuthorizeCodeTransactional_HandleTokenEndpointRequest(t *testing.T) {
 
 			mockTransactional = internal.NewMockTransactional(ctrl)
 			mockCoreStore = internal.NewMockCoreStorage(ctrl)
+			mockAuthorizeStore = internal.NewMockAuthorizeCodeStorage(ctrl)
 			testCase.setup()
-
-			handler := AuthorizeExplicitGrantHandler{
+			config := &fosite.Config{
+				ScopeStrategy:            fosite.HierarchicScopeStrategy,
+				AudienceMatchingStrategy: fosite.DefaultAudienceMatchingStrategy,
+				AuthorizeCodeLifespan:    time.Minute,
+			}
+			handler := GenericCodeTokenEndpointHandler{
+				CodeTokenEndpointHandler: &AuthorizeExplicitGrantTokenHandler{
+					AuthorizeCodeStrategy: &strategy,
+					AuthorizeCodeStorage: authorizeTransactionalStore{
+						mockTransactional,
+						mockAuthorizeStore,
+					},
+				},
 				CoreStorage: transactionalStore{
 					mockTransactional,
 					mockCoreStore,
 				},
-				AccessTokenStrategy:   &strategy,
-				RefreshTokenStrategy:  &strategy,
-				AuthorizeCodeStrategy: &strategy,
-				Config: &fosite.Config{
-					ScopeStrategy:            fosite.HierarchicScopeStrategy,
-					AudienceMatchingStrategy: fosite.DefaultAudienceMatchingStrategy,
-					AuthorizeCodeLifespan:    time.Minute,
-				},
+				AccessTokenStrategy:  &strategy,
+				RefreshTokenStrategy: &strategy,
+				Config:               config,
 			}
 
 			if err := handler.PopulateTokenEndpointResponse(propagatedContext, request, response); testCase.expectError != nil {

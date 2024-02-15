@@ -53,6 +53,12 @@ func Compose(config *fosite.Config, storage interface{}, strategy interface{}, f
 		if ph, ok := res.(fosite.PushedAuthorizeEndpointHandler); ok {
 			config.PushedAuthorizeEndpointHandlers.Append(ph)
 		}
+		if dh, ok := res.(fosite.DeviceEndpointHandler); ok {
+			config.DeviceEndpointHandlers.Append(dh)
+		}
+		if duh, ok := res.(fosite.DeviceUserEndpointHandler); ok {
+			config.DeviceUserEndpointHandlers.Append(duh)
+		}
 	}
 
 	return f
@@ -68,20 +74,25 @@ func ComposeAllEnabled(config *fosite.Config, storage interface{}, key interface
 		storage,
 		&CommonStrategy{
 			CoreStrategy:               NewOAuth2HMACStrategy(config),
+			RFC8628CodeStrategy:        NewDeviceStrategy(config),
 			OpenIDConnectTokenStrategy: NewOpenIDConnectStrategy(keyGetter, config),
 			Signer:                     &jwt.DefaultSigner{GetPrivateKey: keyGetter},
 		},
-		OAuth2AuthorizeExplicitFactory,
+		OAuth2AuthorizeExplicitAuthFactory,
+		OAuth2AuthorizeExplicitTokenFactory,
 		OAuth2AuthorizeImplicitFactory,
 		OAuth2ClientCredentialsGrantFactory,
 		OAuth2RefreshTokenGrantFactory,
 		OAuth2ResourceOwnerPasswordCredentialsFactory,
 		RFC7523AssertionGrantFactory,
+		RFC8628DeviceFactory,
+		RFC8628DeviceAuthorizationTokenFactory,
 
 		OpenIDConnectExplicitFactory,
 		OpenIDConnectImplicitFactory,
 		OpenIDConnectHybridFactory,
 		OpenIDConnectRefreshFactory,
+		OpenIDConnectDeviceFactory,
 
 		OAuth2TokenIntrospectionFactory,
 		OAuth2TokenRevocationFactory,

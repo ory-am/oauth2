@@ -62,6 +62,7 @@ var (
 	_ RevocationHandlersProvider                   = (*Config)(nil)
 	_ PushedAuthorizeRequestHandlersProvider       = (*Config)(nil)
 	_ PushedAuthorizeRequestConfigProvider         = (*Config)(nil)
+	_ DeviceEndpointHandlersProvider               = (*Config)(nil)
 )
 
 type Config struct {
@@ -77,6 +78,18 @@ type Config struct {
 
 	// AuthorizeCodeLifespan sets how long an authorize code is going to be valid. Defaults to fifteen minutes.
 	AuthorizeCodeLifespan time.Duration
+
+	// Sets how long a device user/device code pair is valid for
+	DeviceAndUserCodeLifespan time.Duration
+
+	// DeviceAuthTokenPollingInterval sets the interval that clients should check for device code grants
+	DeviceAuthTokenPollingInterval time.Duration
+
+	// DeviceVerificationURL is the URL of the device verification endpoint, this is is included with the device code request responses
+	DeviceVerificationURL string
+
+	// DeviceDoneURL is the URL of the user is redirected to once the verification is completed
+	DeviceDoneURL string
 
 	// IDTokenLifespan sets the default id token lifetime. Defaults to one hour.
 	IDTokenLifespan time.Duration
@@ -197,6 +210,12 @@ type Config struct {
 	// PushedAuthorizeEndpointHandlers is a list of handlers that are called before the PAR endpoint is served.
 	PushedAuthorizeEndpointHandlers PushedAuthorizeEndpointHandlers
 
+	// DeviceEndpointHandlers is a list of handlers that are called before the device endpoint is served.
+	DeviceEndpointHandlers DeviceEndpointHandlers
+
+	// DeviceUserEndpointHandlers is a list of handlers that are called before the device authorize endpoint is served.
+	DeviceUserEndpointHandlers DeviceUserEndpointHandlers
+
 	// GlobalSecret is the global secret used to sign and verify signatures.
 	GlobalSecret []byte
 
@@ -243,6 +262,14 @@ func (c *Config) GetTokenEndpointHandlers(ctx context.Context) TokenEndpointHand
 
 func (c *Config) GetTokenIntrospectionHandlers(ctx context.Context) TokenIntrospectionHandlers {
 	return c.TokenIntrospectionHandlers
+}
+
+func (c *Config) GetDeviceEndpointHandlers(ctx context.Context) DeviceEndpointHandlers {
+	return c.DeviceEndpointHandlers
+}
+
+func (c *Config) GetDeviceUserEndpointHandlers(ctx context.Context) DeviceUserEndpointHandlers {
+	return c.DeviceUserEndpointHandlers
 }
 
 func (c *Config) GetRevocationHandlers(ctx context.Context) RevocationHandlers {
@@ -361,6 +388,13 @@ func (c *Config) GetAuthorizeCodeLifespan(_ context.Context) time.Duration {
 		return time.Minute * 15
 	}
 	return c.AuthorizeCodeLifespan
+}
+
+func (c *Config) GetDeviceAndUserCodeLifespan(_ context.Context) time.Duration {
+	if c.DeviceAndUserCodeLifespan == 0 {
+		return time.Minute * 10
+	}
+	return c.DeviceAndUserCodeLifespan
 }
 
 // GetIDTokenLifespan returns how long an id token should be valid. Defaults to one hour.
@@ -498,4 +532,19 @@ func (c *Config) GetPushedAuthorizeContextLifespan(ctx context.Context) time.Dur
 // must contain the PAR request_uri.
 func (c *Config) EnforcePushedAuthorize(ctx context.Context) bool {
 	return c.IsPushedAuthorizeEnforced
+}
+
+func (c *Config) GetDeviceDone(ctx context.Context) string {
+	return c.DeviceDoneURL
+}
+
+func (c *Config) GetDeviceVerificationURL(ctx context.Context) string {
+	return c.DeviceVerificationURL
+}
+
+func (c *Config) GetDeviceAuthTokenPollingInterval(ctx context.Context) time.Duration {
+	if c.DeviceAuthTokenPollingInterval == 0 {
+		return time.Second * 5
+	}
+	return c.DeviceAuthTokenPollingInterval
 }

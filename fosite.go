@@ -82,6 +82,34 @@ func (a *PushedAuthorizeEndpointHandlers) Append(h PushedAuthorizeEndpointHandle
 	*a = append(*a, h)
 }
 
+// DeviceEndpointHandlers is a list of DeviceEndpointHandler
+type DeviceEndpointHandlers []DeviceEndpointHandler
+
+// Append adds an DeviceEndpointHandlers to this list. Ignores duplicates based on reflect.TypeOf.
+func (a *DeviceEndpointHandlers) Append(h DeviceEndpointHandler) {
+	for _, this := range *a {
+		if reflect.TypeOf(this) == reflect.TypeOf(h) {
+			return
+		}
+	}
+
+	*a = append(*a, h)
+}
+
+// DeviceUserEndpointHandlers is a list of DeviceUserEndpointHandler
+type DeviceUserEndpointHandlers []DeviceUserEndpointHandler
+
+// Append adds an DeviceUserEndpointHandlers to this list. Ignores duplicates based on reflect.TypeOf.
+func (a *DeviceUserEndpointHandlers) Append(h DeviceUserEndpointHandler) {
+	for _, this := range *a {
+		if reflect.TypeOf(this) == reflect.TypeOf(h) {
+			return
+		}
+	}
+
+	*a = append(*a, h)
+}
+
 var _ OAuth2Provider = (*Fosite)(nil)
 
 type Configurator interface {
@@ -108,6 +136,7 @@ type Configurator interface {
 	RefreshTokenLifespanProvider
 	VerifiableCredentialsNonceLifespanProvider
 	AuthorizeCodeLifespanProvider
+	DeviceAndUserCodeLifespanProvider
 	TokenEntropyProvider
 	RotatedGlobalSecretsProvider
 	GlobalSecretProvider
@@ -132,6 +161,10 @@ type Configurator interface {
 	TokenIntrospectionHandlersProvider
 	RevocationHandlersProvider
 	UseLegacyErrorFormatProvider
+	DeviceEndpointHandlersProvider
+	DeviceUserEndpointHandlersProvider
+	DeviceProvider
+	DeviceUserProvider
 }
 
 func NewOAuth2Provider(s Storage, c Configurator) *Fosite {

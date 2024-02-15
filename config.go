@@ -22,6 +22,19 @@ type AuthorizeCodeLifespanProvider interface {
 	GetAuthorizeCodeLifespan(ctx context.Context) time.Duration
 }
 
+type DeviceAndUserCodeLifespanProvider interface {
+	GetDeviceAndUserCodeLifespan(ctx context.Context) time.Duration
+}
+
+type DeviceUserProvider interface {
+	GetDeviceDone(ctx context.Context) string
+}
+
+type DeviceProvider interface {
+	GetDeviceVerificationURL(ctx context.Context) string
+	GetDeviceAuthTokenPollingInterval(ctx context.Context) time.Duration
+}
+
 // RefreshTokenLifespanProvider returns the provider for configuring the refresh token lifespan.
 type RefreshTokenLifespanProvider interface {
 	// GetRefreshTokenLifespan returns the refresh token lifespan.
@@ -279,6 +292,18 @@ type RevocationHandlersProvider interface {
 type PushedAuthorizeRequestHandlersProvider interface {
 	// GetPushedAuthorizeEndpointHandlers returns the handlers.
 	GetPushedAuthorizeEndpointHandlers(ctx context.Context) PushedAuthorizeEndpointHandlers
+}
+
+// DeviceEndpointHandlersProvider returns the provider for setting up the Device handlers.
+type DeviceEndpointHandlersProvider interface {
+	// GetDeviceEndpointHandlers returns the handlers.
+	GetDeviceEndpointHandlers(ctx context.Context) DeviceEndpointHandlers
+}
+
+// DeviceUserEndpointHandlersProvider returns the provider for setting up the Device Authorize handlers.
+type DeviceUserEndpointHandlersProvider interface {
+	// GetDeviceUserEndpointHandlers returns the handlers.
+	GetDeviceUserEndpointHandlers(ctx context.Context) DeviceUserEndpointHandlers
 }
 
 // UseLegacyErrorFormatProvider returns the provider for configuring whether to use the legacy error format.
