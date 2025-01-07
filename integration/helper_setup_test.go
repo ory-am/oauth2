@@ -86,7 +86,7 @@ var fositeStore = &storage.MemoryStore{
 		"device-client": &fosite.DefaultClient{
 			ID:         "device-client",
 			Secret:     []byte(`$2a$10$IxMdI6d.LIRZPpSfEwNoeu4rY3FhDREsxFJXikcgdRRAStxUlsuEO`), // = "foobar"
-			GrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code"},
+			GrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"},
 			Scopes:     []string{"fosite", "offline", "openid"},
 			Audience:   []string{tokenURL},
 			Public:     true,
